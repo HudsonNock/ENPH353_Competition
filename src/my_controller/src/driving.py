@@ -7,6 +7,7 @@ import torch
 import torch.nn as nn
 import torch.optim as optim
 import torch.nn.functional as F
+import gc
 
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String, Bool
@@ -89,11 +90,18 @@ class myModel(nn.Module):
 
 		x_combined = self.flatten(torch.cat([x_frame, x_diff, numeric_input], dim=1)).cuda()
 
+		del x_diff
+		del x_diff_im
+		del x_frame
+
 		x = self.output(nn.Tanh()(self.dense2(nn.Tanh()(self.dense1(x_combined))))).cuda()
 		#print(prof.key_averages().table(sort_by="self_cpu_time_total", row_limit=20))
 
+		del x_combined
 		if self.i == 0:
-			return nn.Softmax(dim=1)(x).cuda()
+			softmx = nn.Softmax(dim=1)(x).cuda()
+			del x
+			return softmx
 		else:
 			return x
 
@@ -103,11 +111,15 @@ class Controller():
 	def _initalize_models(self):
 		for i in range(3):
 			model = myModel(i, self.channels)
+			state_dict = torch.load(self.weights_folder[i])
+			model.load_state_dict(state_dict)
 			model.cuda()
 			self.models.append(model)
 		for i in range(3,5):
 			model = myModel(i, self.channels)
-			model.load_state_dict(self.models[i-2].state_dict())
+			state_dict = torch.load(self.weights_folder[i])
+			model.load_state_dict(state_dict)
+			#model.load_state_dict(self.models[i-2].state_dict())
 			model.cuda()
 			self.models.append(model)
 
@@ -144,8 +156,8 @@ class Controller():
 		self.weights_folder = ['weights_torch/pi.h5', 'weights_torch/Q1.h5', 'weights_torch/Q2.h5', 'weights_torch/Qt1.h5', 'weights_torch/Qt2.h5']
 		self._initalize_models()
 
-		self.alpha = nn.Parameter(torch.tensor(0.0), requires_grad=True)
-		self.batch_size = 3
+		self.alpha = nn.Parameter(torch.tensor(0.0), requires_grad=False)
+		self.batch_size = 1
 		self.gamma = 0.99
 		self.tau = 0.02
 		#Replay buffer
@@ -155,18 +167,31 @@ class Controller():
 		self.pi = np.zeros(shape=(self.batch_size+1, 18), dtype=np.float32)
 		self.a = np.zeros(shape=(self.batch_size+1,), dtype=np.int8)
 		self.r = np.zeros(shape=(self.batch_size+1,), dtype=np.float32)
-		self.d = np.zeros(shape=(self.batch_size+1,), dtype=np.bool)
+		self.d = np.zeros(shape=(self.batch_size+1,), dtype=bool)
 		#self.q = np.zeros(shape=(self.batch_size+1,), dtype=np.float32)
 		self.index = 0
 		self.start = True
 
 		self.still = 0
 
-		optimizer_phi = optim.Adam(self.models[0].parameters(), lr=0.01)
-		optimizer_q1 = optim.Adam(self.models[1].parameters(), lr=0.01)
-		optimizer_q2 = optim.Adam(self.models[2].parameters(), lr=0.01)
-		optimizer_alpha = optim.Adam([self.alpha], lr=0.01)
+		optimizer_phi = optim.Adagrad(self.models[0].parameters(), lr=0.01)
+		optimizer_q1 = optim.Adagrad(self.models[1].parameters(), lr=0.01)
+		optimizer_q2 = optim.Adagrad(self.models[2].parameters(), lr=0.01)
+		optimizer_alpha = optim.Adagrad([self.alpha], lr=0.01)
 		self.optimizers = [optimizer_phi, optimizer_q1, optimizer_q2, optimizer_alpha]
+
+		self.s_tf = torch.zeros(size=(1,self.channels,360,640), dtype=torch.float32).cuda()
+		self.s_diff_tf = torch.zeros(size=(1,self.channels,360,640), dtype=torch.float32).cuda()
+		self.s_vel_tf = torch.zeros(size=(1,2), dtype=torch.float32).cuda()
+
+		self.s_tf_batch = torch.zeros(size=(self.batch_size+1, self.channels, 360, 640), dtype=torch.float32).cuda()
+		self.s_diff_tf_batch = torch.zeros(size=(self.batch_size+1, self.channels, 360, 640), dtype=torch.float32).cuda()
+		self.s_vel_tf_batch = torch.zeros(size=(self.batch_size+1, 2), dtype=torch.float32).cuda()
+
+		self.cnt = 0
+		self.rwd = 0
+
+		print(torch.cuda.memory_summary())
 
 	def _draw_points(self):
 		self.bitmapPos = cv2.imread('binaryMap2023.png', cv2.IMREAD_COLOR)
@@ -245,6 +270,7 @@ class Controller():
 		if (passed):
 			self.reward = 0.01 * (maxI - self.curr_idx)
 			self.curr_idx = maxI
+			self.rwd += self.reward
 
 	def _check_terminal_state(self):
 		if 1.753029 < self.pos[2] < 1.989973 and -1.791982 < self.pos[0] < -0.886508 and -0.36789 < self.pos[1] < -0.028055:
@@ -293,6 +319,13 @@ class Controller():
 
 	def _process_image(self, msg):
 		self._pause_simulation()
+		self.cnt += 1
+		if (self.cnt % 10 == 0):
+			print(self.cnt)
+		if (self.cnt % 50 == 0):
+			print("---")
+			print(self.rwd)
+			self.rwd = 0
 		if (self.reward != -1):
 			self._find_closest_point()
 		if (self.reward > 0):
@@ -324,28 +357,27 @@ class Controller():
 			self.r[self.index] = 0
 			self._train(True)
 
-		s_tf = torch.unsqueeze(torch.tensor(self.s[self.index]), dim=0).cuda()
-		s_diff_tf = torch.unsqueeze(torch.tensor(self.s_diff[self.index]), dim=0).cuda()
-		s_vel_tf = torch.unsqueeze(torch.tensor(self.s_vel[self.index]), dim=0).cuda()
+		self.s_tf.copy_(torch.unsqueeze(torch.tensor(self.s[self.index]), dim=0))
+		self.s_diff_tf.copy_(torch.unsqueeze(torch.tensor(self.s_diff[self.index]), dim=0))
+		self.s_vel_tf.copy_(torch.unsqueeze(torch.tensor(self.s_vel[self.index]), dim=0))
 
-		start_time = time.time()
+		#start_time = time.time()
 		with torch.no_grad():
-			predict = self.models[0](s_tf, s_diff_tf, s_vel_tf)
+			predict = self.models[0](self.s_tf, self.s_diff_tf, self.s_vel_tf)
 			self.pi[self.index] = predict.cpu().detach().numpy()
-		end_time = time.time()
+			del predict
+		#end_time = time.time()
+
 		self.a[self.index] = np.random.choice(len(self.pi[self.index]), p=self.pi[self.index])
 		self._take_action()
 
 		if self.index == self.batch_size:
-			self._train()
+			self.index=0
+			#self._train()
 
 		self.index += 1
 		self.reward = -0.01
-		print(f"{end_time - start_time:.4f}")
-		del s_tf
-		del s_diff_tf
-		del s_vel_tf
-		del predict
+		#print(f"{end_time - start_time:.4f}")
 		torch.cuda.empty_cache()
 		self._unpause_simulation()
 
@@ -360,26 +392,50 @@ class Controller():
 		unpause_physics()
 
 	def _train(self, terminal=False):
+		torch.cuda.synchronize()
 		torch.cuda.empty_cache()
+		#print(torch.cuda.memory_allocated())
+		#print(torch.cuda.memory_summary())
 		i = 1
 		# Critic Loss
 		if np.random.rand() < 0.5:
 			i=2
 
-		s_tf = torch.tensor(self.s[0:self.index+1]).cuda()
-		s_diff_tf = torch.tensor(self.s_diff[0:self.index+1]).cuda()
-		s_vel_tf = torch.tensor(self.s_vel[0:self.index+1]).cuda()
+		self.s_tf_batch.copy_(torch.tensor(self.s[0:self.index+1]))
+		self.s_diff_tf_batch.copy_(torch.tensor(self.s_diff[0:self.index+1]))
+		self.s_vel_tf_batch.copy_(torch.tensor(self.s_vel[0:self.index+1]))
 
-		q = self.models[i](s_tf, s_diff_tf, s_vel_tf)
+		#torch.cuda.synchronize()
+		#torch.cuda.empty_cache()
+		#print("A")
+		#print(torch.cuda.memory_allocated())
+
+		q = self.models[i](self.s_tf_batch, self.s_diff_tf_batch, self.s_vel_tf_batch)
 		loss = self._critic_loss(q)
 
-		loss.backward()
-		self.optimizers[i].step()
 		self.optimizers[i].zero_grad()
 
-		del s_tf
-		del s_diff_tf
-		del s_vel_tf
+		#torch.cuda.synchronize()
+		#torch.cuda.empty_cache()
+		#print("B1")
+		#print(torch.cuda.memory_allocated())
+
+		loss.backward() # Q
+
+		#torch.cuda.synchronize()
+		#torch.cuda.empty_cache()
+		#print("B2")
+		#print(torch.cuda.memory_allocated())
+
+		self.optimizers[i].step()
+
+		del q
+		del loss
+
+		#torch.cuda.synchronize()
+		#torch.cuda.empty_cache()
+		#print("C")
+		#print(torch.cuda.memory_allocated())
 
 		if terminal:
 			terminalQ = self.models[i](torch.tensor([self.s[self.index]]).cuda(), torch.tensor([self.s_diff[self.index]]).cuda(), torch.tensor([self.s_vel[self.index]]).cuda())
@@ -392,24 +448,33 @@ class Controller():
 
 		# Actor Loss
 		with torch.no_grad():
-			qt1 = self.models[3](torch.tensor(self.s[0:self.index]).cuda(), torch.tensor(self.s_diff[0:self.index]).cuda(), torch.tensor(self.s_vel[0:self.index]).cuda())
-			qt2 = self.models[4](torch.tensor(self.s[0:self.index]).cuda(), torch.tensor(self.s_diff[0:self.index]).cuda(), torch.tensor(self.s_vel[0:self.index]).cuda())
+			qt1 = self.models[3](self.s_tf_batch[0:self.index], self.s_diff_tf_batch[0:self.index], self.s_vel_tf_batch[0:self.index])
+			qt2 = self.models[4](self.s_tf_batch[0:self.index], self.s_diff_tf_batch[0:self.index], self.s_vel_tf_batch[0:self.index])
 			q_min = torch.min(qt1, qt2)
+			del qt1
+			del qt2
 
-		action = self.models[0](torch.tensor(self.s[0:self.index]).cuda(), torch.tensor(self.s_diff[0:self.index]).cuda(), torch.tensor(self.s_vel[0:self.index]).cuda())
+		action = self.models[0](self.s_tf_batch[0:self.index], self.s_diff_tf_batch[0:self.index], self.s_vel_tf_batch[0:self.index])
 		loss = self._actor_loss(action, q_min)
 
+		self.optimizers[0].zero_grad()
 		loss.backward()
 		self.optimizers[0].step()
-		self.optimizers[0].zero_grad()
+
+		del action
+		del q_min
 
 		# Temperature Loss (alpha)
 
+		self.alpha.requires_grad = True
+
 		loss = self._temperature_loss()
 
+		self.optimizers[3].zero_grad()
 		loss.backward()
 		self.optimizers[3].step()
-		self.optimizers[3].zero_grad()
+
+		self.alpha.requires_grad = False
 
 		# Update Qt
 		source_params = self.models[i].parameters()
@@ -422,6 +487,10 @@ class Controller():
 		for target_param, updated_param in zip(self.models[i+2].parameters(), updated_params):
 			target_param.data.copy_(updated_param)
 
+		del updated_params
+		del source_params
+		del target_params
+
 		self.s[0] = self.s[self.batch_size]
 		self.a[0] = self.a[self.batch_size]
 		self.pi[0] = self.pi[self.batch_size]
@@ -433,31 +502,38 @@ class Controller():
 		if (terminal):
 			self._respawn()
 
-		if self.epoch % 50 == 0:
+		if (self.epoch) % 200 == 150:
 			for i in range(len(self.models)):
 				torch.save(self.models[i].state_dict(), self.weights_folder[i])
 
 		self.epoch += 1
 
-		del q
-		del loss
-		del qt1
-		del qt2
-		del q_min
-		del action
-
+		torch.cuda.synchronize()
 		torch.cuda.empty_cache()
+		#print("D")
+		#print(torch.cuda.memory_allocated())
+		#print(torch.cuda.memory_summary())
 
 		#self._unpause_simulation()
 
 	def _critic_loss(self, q):
-		pi_c = torch.tensor(self.pi[1:self.index+1], requires_grad=True).cuda()
-		target_q_values = torch.tensor(self.r[0:self.index], requires_grad=True).cuda() + \
-				  torch.tensor(self.gamma, device='cuda', requires_grad=True) * torch.sum(pi_c * \
-				  (q[1:self.index+1]-self.alpha.cuda() * \
-				   torch.log(pi_c)), dim=-1)
-		selected_q_values = torch.sum(q[0:self.index] * torch.tensor(np.eye(18)[self.a[0:self.index]]).to(q.dtype).cuda(), dim=-1)
+		pi_c = torch.tensor(self.pi[1:self.index+1], requires_grad=False).cuda()
+		r = torch.tensor(self.r[0:self.index], requires_grad=False).cuda()
+		ga = torch.tensor(self.gamma, device='cuda', requires_grad=False)
+		one_hot = torch.tensor(np.eye(18)[self.a[0:self.index]]).to(q.dtype).cuda()
+		log_pi_c = torch.log(pi_c)
+		alpha_cuda = self.alpha.cuda()
+		target_q_values = r + ga * torch.sum(pi_c * (q[1:self.index+1]-alpha_cuda * log_pi_c), dim=-1)
+		selected_q_values = torch.sum(q[0:self.index] * one_hot, dim=-1)
 		loss = 0.5 * torch.mean((selected_q_values - target_q_values)**2)
+		del pi_c
+		del target_q_values
+		del selected_q_values
+		del r
+		del ga
+		del log_pi_c
+		del one_hot
+		del alpha_cuda
 
 		return loss
 
@@ -466,13 +542,22 @@ class Controller():
 		#for i in range(self.batch_size):
 		#	sum += tf.reduce_sum(action[i] * (self.alpha * tf.math.log(action[i]) - self.q[i]))
 		#return sum
-		log_term = self.alpha.cuda() * torch.log(action)
+		alpha_cuda = self.alpha.cuda()
+		log_term = alpha_cuda * torch.log(action)
 		elementwise_product = action * (log_term - q_min)
-		return torch.sum(elementwise_product)
+		loss = torch.sum(elementwise_product)
+
+		del log_term
+		del elementwise_product
+
+		return loss
 
 	def _temperature_loss(self):
 		log_pi = torch.log(torch.tensor(self.pi[0:self.index]))
 		loss = torch.sum(torch.tensor(self.pi[0:self.index]) * (-self.alpha * (log_pi + self.H)))
+
+		del log_pi
+
 		return loss
 
 	def _record_points(self):
