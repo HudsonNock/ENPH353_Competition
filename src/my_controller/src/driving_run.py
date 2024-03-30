@@ -168,8 +168,8 @@ class Controller():
 		elif self.section == 2:
 			self.lin_vel += self.pi[1] * 0.4 +  self.pi[2] * 0.4 +  self.pi[3] * 0.4 - \
 					 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.2
-			self.ang_vel = 0.9 * (4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
-					4.7 * self.pi[3] - 4.7 * self.pi[5] - 4.7 * self.pi[8])
+			self.ang_vel = 4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
+					4.7 * self.pi[3] - 4.7 * self.pi[5] - 4.7 * self.pi[8] - 0.03
 			if self.lin_vel < 0:
 				self.lin_vel = 0
 			if self.lin_vel > 2.5:
@@ -228,10 +228,25 @@ class Controller():
 		self._take_action_distribute()
 		torch.cuda.empty_cache()
 
+	def _pause_simulation(self):
+		rospy.wait_for_service('/gazebo/pause_physics')
+		pause_physics = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
+		pause_physics()
+
+	def _unpause_simulation(self):
+		rospy.wait_for_service('/gazebo/unpause_physics')
+		unpause_physics = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
+		unpause_physics()
+
+
 	def run(self):
 		rospy.init_node('adeept_awr_driver')
 		rate = rospy.Rate(10)
 
+		#self._pause_simulation()
+		#time.sleep(4)
+		#self._unpause_simulation()
+		time.sleep(3.5)
 		print("subscribing")
 
 		self.sign_pub.publish(str('nootnoot,multi21,0,NA'))
@@ -260,7 +275,6 @@ class Controller():
 		rospy.spin()
 
 if __name__=='__main__':
-#	time.sleep(20)
 	print("Running Model")
 	dr = Controller()
 	dr.run()
