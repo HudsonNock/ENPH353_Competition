@@ -115,7 +115,7 @@ class Controller():
 			self.models.append(model)
 		for i in range(3,5):
 			model = myModel(i, self.channels)
-			state_dict = torch.load(self.weights_folder[i])
+			state_dict = torch.load(self.weights_folder_best[i])
 			model.load_state_dict(state_dict)
 			#model.load_state_dict(self.models[i-2].state_dict())
 			model.cuda()
@@ -145,7 +145,7 @@ class Controller():
 		# Policy network
 		# actions are: +0.1, +1, + 10, + 100, -0.1, -1, -10, -100, (set 0) for both velocity and angular velocity,
 		# so |A| = 18
-		self.H = 0.7 #0.8 #0.98 * (- np.log(1 / 3.0))
+		self.H = 0.8 #0.8 #0.98 * (- np.log(1 / 3.0))
 
 		self.channels = 1
 		self.input_shape = (self.channels, 360, 640)
@@ -153,12 +153,12 @@ class Controller():
 		self.models = nn.ModuleList()
 		#self.weights_folder = ['weights3/pi.h', 'weights3/Q1.h5', 'weights3/Q2.h5', 'weights3/Qt1.h5', 'weights3/Qt2.h5']
 		#self._initalize_models()
-		self.weights_folder = ['weights5L/pi.h', 'weights5L/Q1.h5', 'weights5L/Q2.h5', 'weights5L/Qt1.h5', 'weights5L/Qt2.h5']
-		self.weights_folder_best = ['weights_1.6Speed_Grass/pi.h', 'weights_1.6Speed_Grass/Q1.h5', 'weights_1.6Speed_Grass/Q2.h5', 'weights_1.6Speed_Grass/Qt1.h5', 'weights_1.6Speed_Grass/Qt2.h5']
+		self.weights_folder = ['weights5L/pi.h5', 'weights5L/Q1.h5', 'weights5L/Q2.h5', 'weights5L/Qt1.h5', 'weights5L/Qt2.h5']
+		self.weights_folder_best = ['weights_1.6Speed_Grass/pi.h5', 'weights_1.6Speed_Grass/Q1.h5', 'weights_1.6Speed_Grass/Q2.h5', 'weights_1.6Speed_Grass/Qt1.h5', 'weights_1.6Speed_Grass/Qt2.h5']
 
 		self._initalize_models()
-		self.alpha = nn.Parameter(torch.tensor(0.0178), requires_grad=False)
-		self.log_alpha = nn.Parameter(torch.tensor(-5.2))
+		self.alpha = nn.Parameter(torch.tensor(0.0047), requires_grad=False)
+		self.log_alpha = nn.Parameter(torch.tensor(-5.0))
 		self.batch_size = 1
 		self.gamma = 0.97
 		self.tau = 0.002
@@ -343,14 +343,15 @@ class Controller():
 		self._publish_vel()
 
 	def _take_action_distribute(self):
-		self.lin_vel += self.pi[self.index][1] * 0.2 +  self.pi[self.index][2] * 0.2 +  self.pi[self.index][3] * 0.2 - \
+		lin_vel_add = self.pi[self.index][1] * 0.2 +  self.pi[self.index][2] * 0.2 +  self.pi[self.index][3] * 0.2 - \
 				 self.pi[self.index][6] * 0.2 - self.pi[self.index][7] * 0.2 - self.pi[self.index][8] * 0.2
-		self.ang_vel = 4 * self.pi[self.index][1] + 4* self.pi[self.index][4] + 4* self.pi[self.index][6] - \
-				4 * self.pi[self.index][3] - 4 * self.pi[self.index][5] - 4 * self.pi[self.index][8]
+		self.ang_vel = 0.9 * (4 * self.pi[self.index][1] + 4* self.pi[self.index][4] + 4* self.pi[self.index][6] - \
+				4 * self.pi[self.index][3] - 4 * self.pi[self.index][5] - 4 * self.pi[self.index][8])
+		self.lin_vel += lin_vel_add
 		if self.lin_vel < 0:
 			self.lin_vel = 0
-		if self.lin_vel > 1.6:
-			self.lin_vel = 1.6
+		if self.lin_vel > 1.6 * 0.88:
+			self.lin_vel = 1.6 * 0.88
 		self._publish_vel()
 
 	def _process_image(self, msg):
@@ -363,12 +364,20 @@ class Controller():
 			self.index = 0
 			self.curr_idx = self.respawn_idx[self.respawn_loc]
 			self.hasR = False
-		if self._check_offroad() or self.hit or self.still > 22:
+		if self.hit:
 			self._respawn()
+			self.sign_pub.publish(str('nootnoot,multi21,0,NA'))
+			self.still = 0
+			self.d[self.index-1] = 1
+			self.r[self.index-1] = -0.04
+		elif self._check_offroad() or self.still > 22:
+			self._respawn()
+			self.sign_pub.publish(str('nootnoot,multi21,0,NA'))
 			self.still = 0
 			self.d[self.index-1] = 1
 			self.r[self.index-1] = 0.0
 		if (self.curr_idx == len(self.points)-1) or (self.pos[1] > 0.03215 and self.pos[0] < 0.9):
+			self.sign_pub.publish(str('nootnoot,multi21,-1,NA'))
 			self._respawn()
 			self.still = 0
 			self.d[self.index-1] = 1
@@ -707,7 +716,7 @@ class Controller():
 		msg.model_name = 'R1'
 
 		random_num = np.random.rand()
-		if random_num < 0.17:
+		if random_num < 0.05:
 			#up
 			msg.pose.position.x = 5.493696
 			msg.pose.position.y = 2.472393
@@ -717,7 +726,7 @@ class Controller():
 			msg.pose.orientation.z = 0.707
 			msg.pose.orientation.w = -0.707
 			self.respawn_loc = 0
-		elif random_num < 0.4:
+		elif random_num < 0.95:
 			#down
 			msg.pose.position.x = 4.571
 			msg.pose.position.y = -2.14113
@@ -727,7 +736,7 @@ class Controller():
 			msg.pose.orientation.z = 0.707
 			msg.pose.orientation.w = 0.707
 			self.respawn_loc = 2
-		elif random_num < 0.7:
+		else:
 			#left
 			msg.pose.position.x = 4.80
 			msg.pose.position.y = -0.3
@@ -737,7 +746,7 @@ class Controller():
 			msg.pose.orientation.z = 0
 			msg.pose.orientation.w = -1.0
 			self.respawn_loc = 1
-		else:
+		#else:
 			#right
 			#msg.pose.position.x = 2.50
 			#msg.pose.position.y = -0.31
@@ -748,16 +757,17 @@ class Controller():
 			#msg.pose.orientation.w = 0
 			#self.respawn_loc = 3
 		#	else:
-			msg.pose.position.x = 2.50
-			msg.pose.position.y = -2.1
-			msg.pose.position.z = 0.0525
-			msg.pose.orientation.y = 0
-			msg.pose.orientation.x = 0
-			msg.pose.orientation.z = 1.0
-			msg.pose.orientation.w = 0
-			self.respawn_loc = 3
+		#	msg.pose.position.x = 2.50
+		#	msg.pose.position.y = -2.1
+		#	msg.pose.position.z = 0.0525
+		#	msg.pose.orientation.y = 0
+		#	msg.pose.orientation.x = 0
+		#	msg.pose.orientation.z = 1.0
+		#	msg.pose.orientation.w = 0
+		#	self.respawn_loc = 3
 
-		self.lin_vel = 0.1 + np.random.randint(0,4) * 0.2
+		self.lin_vel = 0.1 + np.random.randint(0,3) * 0.2
+		#self.lin_vel = 0.4
 		self.ang_vel = 0
 		self._publish_vel()
 
@@ -774,7 +784,7 @@ class Controller():
 		rospy.Subscriber('/isHit', Bool, self._check_collision)
 		rospy.Subscriber('R1/pi_camera/image_raw', Image, self._process_image)
 
-		self.sign_pub.publish(str('TeamRed,multi21,0,JEDIS'))
+		self.sign_pub.publish(str('nootnoot,multi21,0,NA'))
 
 		msg = ModelState()
 		msg.model_name = 'R1'
@@ -787,7 +797,7 @@ class Controller():
 		msg.pose.orientation.z = 0.707
 		msg.pose.orientation.w = -0.707
 
-		self.lin_vel = 0.1 + np.random.randint(0,4) * 0.2
+		self.lin_vel = 0.2 #+ np.random.randint(0,4) * 0.2
 		self.ang_vel = 0
 		self._publish_vel()
 
