@@ -119,6 +119,18 @@ class Controller():
 		model2.cuda()
 		self.models.append(model2)
 
+		model3 = myModel(0, self.channels)
+		state_dict = torch.load(self.weights_folder_3)
+		model3.load_state_dict(state_dict)
+		model3.cuda()
+		self.models.append(model3)
+
+		model4 = myModel(0, self.channels)
+		state_dict = torch.load(self.weights_folder_4)
+		model4.load_state_dict(state_dict)
+		model4.cuda()
+		self.models.append(model4)
+
 	def __init__(self):
 		self.lin_vel = 0.0
 		self.ang_vel = 0.0
@@ -131,6 +143,8 @@ class Controller():
 		self.models = nn.ModuleList()
 		self.weights_folder_1 = '/home/fizzer/ros_ws/src/my_controller/src/weights_1.6Speed_Grass/pi.h5'
 		self.weights_folder_2 = '/home/fizzer/ros_ws/src/my_controller/src/weights_2.5Speed_2/pi.h5'
+		self.weights_folder_3 = '/home/fizzer/ros_ws/src/my_controller/src/weights_1.4Speed_3/pi.h5'
+		self.weights_folder_4 = '/home/fizzer/ros_ws/src/my_controller/src/weights_2.0Speed_4/pi.h5'
 
 		self._initalize_models()
 		print("loaded model")
@@ -139,7 +153,6 @@ class Controller():
 		self.s = np.zeros(shape=(self.channels, 360,640), dtype=np.float32)
 		self.s_vel = np.zeros(shape=(2,), dtype=np.float32)
 		self.pi = np.zeros(shape=(9,), dtype=np.float32)
-		self.a = 0
 
 		self.section = 1
 
@@ -161,28 +174,87 @@ class Controller():
 			self.ang_vel = 0.9 * (4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
 					4 * self.pi[3] - 4 * self.pi[5] - 4 * self.pi[8])
 			self.lin_vel += lin_vel_add
+			if self.img_cnt <= 101 and self.img_cnt >= 97:
+				self.ang_vel = 4.0
 			if self.lin_vel < 0:
 				self.lin_vel = 0
 			if self.lin_vel > 1.6 * 0.88:
 				self.lin_vel = 1.6 * 0.88
 		elif self.section == 2:
-			self.lin_vel += self.pi[1] * 0.4 +  self.pi[2] * 0.4 +  self.pi[3] * 0.4 - \
-					 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.2
+			if self.img_cnt >= 219 and self.img_cnt < 226:
+				self.lin_vel -= 0.2
+			elif self.img_cnt > 225:
+				self.lin_vel = 1.2
+			else:
+				self.lin_vel += self.pi[1] * 0.4 +  self.pi[2] * 0.4 +  self.pi[3] * 0.4 - \
+						 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.23
 			self.ang_vel = 4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
-					4.7 * self.pi[3] - 4.7 * self.pi[5] - 4.7 * self.pi[8] - 0.03
+					4.7 * self.pi[3] - 4.7 * self.pi[5] - 4.7 * self.pi[8] - 0.0
+			if self.img_cnt >= 219 and self.img_cnt < 226:
+				self.ang_vel -= 0.7
 			if self.lin_vel < 0:
 				self.lin_vel = 0
-			if self.lin_vel > 2.5:
-				self.lin_vel = 2.5
+			if self.lin_vel > 2.1:
+				self.lin_vel = 2.1
+		elif self.section == 3:
+			self.lin_vel += self.pi[1] * 0.2 +  self.pi[2] * 0.2 +  self.pi[3] * 0.2 - \
+					 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.2
+			self.ang_vel = 2.0*(4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
+					4 * self.pi[3] - 4 * self.pi[5] - 4 * self.pi[8])
+			if self.lin_vel < 0:
+				self.lin_vel = 0
+			if self.lin_vel > 1.0:
+				self.lin_vel = 1.0
+		elif self.section == 4:
+			action = np.argmax(self.pi)
+			if action == 0:
+				self.ang_vel = 0
+			elif action == 1:
+				self.lin_vel += 0.2
+				self.ang_vel = 2
+			elif action == 2:
+				self.lin_vel += 0.2
+			elif action == 3:
+				self.lin_vel += 0.2
+				self.ang_vel = -2
+			elif action == 4:
+				self.ang_vel = 2
+			elif action == 5:
+				self.ang_vel = -3
+			elif action == 6:
+				self.lin_vel -= 0.2
+				self.ang_vel = 2
+			elif action == 7:
+				self.lin_vel -= 0.2
+			elif action == 8:
+				self.lin_vel -= 0.2
+				self.ang_vel = -2
+			if self.lin_vel < 0:
+				self.lin_vel = 0
+			if self.lin_vel > 1.8:
+				self.lin_vel = 1.8
+
 		self._publish_vel()
 
 	def _process_image(self, msg):
 		torch.cuda.synchronize()
 		self.img_cnt += 1
-		if self.img_cnt == 133:
+		if self.img_cnt == 148:
 			self.section = 2
-		if self.img_cnt > 132 and self.img_cnt < 138:
+		if self.img_cnt > 148 and self.img_cnt < 154:
 			self.lin_vel = 1.3
+		if self.img_cnt == 237:
+			self.section = 3
+			self.lin_vel = 1.0
+		if self.img_cnt == 335:
+			self.section = 4
+		if self.img_cnt == 450:
+			self.lin_vel = 0.0
+			self.ang_vel = 0.0
+			self._publish_vel()
+			return
+		if self.img_cnt > 450:
+			return
 
 		bridge = CvBridge()
 		cv_image = cv2.cvtColor(bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough"), cv2.COLOR_BGR2RGB)
@@ -191,6 +263,23 @@ class Controller():
 		cv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2GRAY)
 		#cv2.imshow('Vision', cv_image)
 		#cv2.waitKey(1)
+
+		if self.img_cnt >= 50 and self.img_cnt < 63:
+			if self.img_cnt < 57:
+				self.lin_vel = 0.3
+				self.ang_vel = -4.0
+			elif self.img_cnt < 61:
+				self.lin_vel = 0
+				self.ang_vel = -0.7
+			elif self.img_cnt == 61:
+				self.lin_vel = 0.5
+				self.ang_vel = 0.0
+			else:
+				self.lin_vel = 1.0
+				self.ang_vel = 0.0
+
+			self._publish_vel()
+			return
 
 		torch_image = torch.tensor(cv_image, dtype=torch.float32)
 		torch_image_batched = torch.unsqueeze(torch_image, dim=0)
@@ -217,13 +306,20 @@ class Controller():
 				predict = self.models[1](self.s_tf, self.s_vel_tf)
 				self.pi = predict.cpu().detach().numpy()[0]
 				del predict
+		elif self.section == 3:
+			with torch.no_grad():
+				predict = self.models[2](self.s_tf, self.s_vel_tf)
+				self.pi = predict.cpu().detach().numpy()[0]
+				del predict
+		elif self.section == 4:
+			with torch.no_grad():
+				predict = self.models[3](self.s_tf, self.s_vel_tf)
+				self.pi = predict.cpu().detach().numpy()[0]
+				del predict
 
 		for i in range(len(self.pi)):
 			if np.isnan(self.pi[i]):
 				self.pi[i] = 0
-
-		self.a = np.random.choice(len(self.pi), p=self.pi)
-		#self.a = np.argmax(self.pi[self.index])
 
 		self._take_action_distribute()
 		torch.cuda.empty_cache()
