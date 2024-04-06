@@ -174,13 +174,12 @@ class Controller():
 			self.ang_vel = 0.9 * (4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
 					4 * self.pi[3] - 4 * self.pi[5] - 4 * self.pi[8])
 			self.lin_vel += lin_vel_add
-			if self.img_cnt >= 86 and self.img_cnt <= 87:
-				self.ang_vel = 0
-				self.lin_vel = 1.0
-			if self.img_cnt < 10:
+			if self.img_cnt == 79 or self.img_cnt==80 or self.img_cnt == 81:
+				self.ang_vel = -4.0
+			elif self.img_cnt < 10:
 				self.ang_vel = 0
 				self.lin_vel += 0.2
-			if self.img_cnt <= 101 and self.img_cnt >= 97:
+			elif self.img_cnt <= 101 and self.img_cnt >= 97:
 				self.ang_vel = 4.0
 			if self.lin_vel < 0:
 				self.lin_vel = 0
@@ -304,19 +303,16 @@ class Controller():
 			self._publish_vel()
 			return
 
-		if self.img_cnt >= 202 and self.img_cnt <= 215:
+		if self.img_cnt >= 202 and self.img_cnt <= 207:
 			if self.img_cnt < 205:
 				self.lin_vel = 1.3
 				self.ang_vel = 4.0
 			elif self.img_cnt < 207:
 				self.lin_vel = 1.3
 				self.ang_vel = 0.0
-			elif self.img_cnt == 213:
-				self.lin_vel = 1.7
-				self.ang_vel = 0.0
 			else:
-				self.lin_vel = 2.0
-				self.ang_vel = 0.0
+				self.lin_vel = 1.7
+				self.ang_vel = -2.0
 
 			self._publish_vel()
 			return
