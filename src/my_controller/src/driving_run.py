@@ -9,6 +9,10 @@ import torch.optim as optim
 import torch.nn.functional as F
 import time
 import gc
+import sys
+
+sys.path.append("/home/fizzer/ros_ws/src/my_controller/src")
+import read_sign
 
 from geometry_msgs.msg import Twist
 from std_msgs.msg import String, Bool
@@ -155,11 +159,17 @@ class Controller():
 		self.pi = np.zeros(shape=(9,), dtype=np.float32)
 
 		self.section = 1
+		self.section_count = 0
 
 		self.s_tf = torch.zeros(size=(1,self.channels,360,640), dtype=torch.float32).cuda()
 		self.s_vel_tf = torch.zeros(size=(1,2), dtype=torch.float32).cuda()
 
 		self.img_cnt = 0
+
+		self.sec2 = 0
+		self.sec3 = 0
+		self.sec4 = 0
+		self.pink3 = False
 
 	def _publish_vel(self):
 		tw = Twist()
@@ -167,36 +177,100 @@ class Controller():
 		tw.angular.z = self.ang_vel
 		self.twist_pub.publish(tw)
 
+	def _check_pink(self, img, num, den):
+		height, width, _ = img.shape
+		bottom_third = img[height * num // den:, :, :]
+		diff = np.sum(np.abs(bottom_third - np.array([254,0,254])),axis=2)
+
+		if np.any(diff < 10):
+			return True
+		return False
+
 	def _take_action_distribute(self):
 		if self.section == 1:
 			lin_vel_add = self.pi[1] * 0.2 +  self.pi[2] * 0.2 +  self.pi[3] * 0.2 - \
 					 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.2
-			self.ang_vel = 0.9 * (4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
-					4 * self.pi[3] - 4 * self.pi[5] - 4 * self.pi[8])
+			if self.section_count <= 95:
+				self.ang_vel = 0.9 * (4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
+						4 * self.pi[3] - 4 * self.pi[5] - 4 * self.pi[8])
+			else:
+				self.ang_vel = 0.75 * (4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
+						4 * self.pi[3] - 4 * self.pi[5] - 4 * self.pi[8])
 			self.lin_vel += lin_vel_add
-			if self.img_cnt == 79 or self.img_cnt==80 or self.img_cnt == 81:
+			#if self.section_count >= 164 and self.section_count <= 169:
+			#	self.lin_vel += 0.2
+			#else:
+			#	self.lin_vel += lin_vel_add
+
+			if self.section_count < 44:
+				self.lin_vel += 0.13
+			elif self.section_count >= 100 and self.section_count <= 107:
+				self.lin_vel += 0.13
+
+			if self.section_count == 83 or self.section_count == 84 or self.section_count == 85:
+				self.ang_vel = 5.0
+			#elif self.section_count == 76 or self.section_count == 77:
+			#	self.ang_vel -= 2.0
+			#elif self.section_count == 72 or self.section_count == 73:
+			#	self.ang_vel = 0.0
+			elif self.section_count == 64:
 				self.ang_vel = -4.0
-			elif self.img_cnt < 10:
-				self.ang_vel = 0
-				self.lin_vel += 0.2
-			elif self.img_cnt <= 101 and self.img_cnt >= 97:
-				self.ang_vel = 4.0
+			#elif self.section_count >= 85 and self.section_count <= 97:
+			#	self.lin_vel = 0.7
+			#elif self.section_count == 126 or self.section_count == 127 or self.section_count == 128:
+			#	self.ang_vel = -4.0
+			#elif self.section_count == 126 or self.section_count == 127 or self.section_count == 128 or self.section_count == 129:
+			#	self.ang_vel = -6.0
+			#elif self.section_count == 37 or self.section_count == 38 or self.section_count == 39 or self.section_count == 40:
+			#	self.ang_vel = 5.5
+			#elif self.section_count == 41:
+			#	self.ang_vel = 0
+			elif self.section_count == 46 or self.section_count == 47 or self.section_count == 48:
+				self.ang_vel = -4.0
+			#elif self.section_count == 70 or self.section_count == 71 or self.section_count == 72:
+			#	self.ang_vel = -5.0
+			#elif self.section_count == 73 or self.section_count == 74 or self.section_count == 75:
+			#	self.ang_vel = 6.5
+			#elif self.section_count == 76 or self.section_count == 77:
+			#	self.ang_vel = -3.2
+
 			if self.lin_vel < 0:
 				self.lin_vel = 0
 			if self.lin_vel > 1.6 * 0.88:
 				self.lin_vel = 1.6 * 0.88
 		elif self.section == 2:
-			if self.img_cnt >= 229 and self.img_cnt < 236:
-				self.lin_vel -= 0.2
-			elif self.img_cnt > 225:
-				self.lin_vel = 1.2
+			if self.section_count >= 58 and self.section_count <= 75:
+				self.ang_vel = 4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
+					4.7 * self.pi[3] - 4.7 * self.pi[5] - 4.7 * self.pi[8] - 0.25
 			else:
-				self.lin_vel += self.pi[1] * 0.4 +  self.pi[2] * 0.4 +  self.pi[3] * 0.4 - \
-						 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.23
-			self.ang_vel = 4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
-					4.7 * self.pi[3] - 4.7 * self.pi[5] - 4.7 * self.pi[8] - 0.0
-			if self.img_cnt >= 229 and self.img_cnt < 236:
-				self.ang_vel -= 0.7
+				self.ang_vel = 4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
+					4.7 * self.pi[3] - 4.7 * self.pi[5] - 4.7 * self.pi[8]
+
+			if self.section_count >= 68:
+				if self.ang_vel > 0:
+					self.ang_vel *= 0.8
+
+			self.lin_vel += self.pi[1] * 0.4 +  self.pi[2] * 0.4 +  self.pi[3] * 0.4 - \
+					 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.23
+
+			if self.section_count < 10:
+				self.lin_vel += 0.15
+
+			if self.section_count >= 41 and self.section_count <= 51 and self.ang_vel > 0.5:
+				self.ang_vel += 2.0
+
+			if self.section_count >= 41 and self.section_count <= 43:
+				self.lin_vel = 1.5
+				#self.ang_vel += 2.0
+			elif self.section_count == 47 or self.section_count == 48:
+				#self.ang_vel = -4.0
+				self.lin_vel += 0.3
+			elif self.section_count == 76 or self.section_count == 77:
+				self.lin_vel = 1.5
+				self.ang_vel -= 2.0
+			elif self.section_count >= 78:
+				self.lin_vel = 1.0
+
 			if self.lin_vel < 0:
 				self.lin_vel = 0
 			if self.lin_vel > 2.1:
@@ -206,6 +280,14 @@ class Controller():
 					 self.pi[6] * 0.2 - self.pi[7] * 0.2 - self.pi[8] * 0.2
 			self.ang_vel = 2.0*(4 * self.pi[1] + 4* self.pi[4] + 4* self.pi[6] - \
 					4 * self.pi[3] - 4 * self.pi[5] - 4 * self.pi[8])
+
+			if self.section_count == 10 or self.section_count == 11:
+				self.ang_vel -= 2.0
+			#elif self.section_count == 11 or self.section_count == 12:
+			#	self.ang_vel = 3
+
+			if self.section_count >= 172 and self.section_count <= 178:
+				self.ang_vel -= 1.0
 			if self.lin_vel < 0:
 				self.lin_vel = 0
 			if self.lin_vel > 1.0:
@@ -239,83 +321,112 @@ class Controller():
 			if self.lin_vel > 1.8:
 				self.lin_vel = 1.8
 
+			if self.section_count == 118 or self.section_count == 119 or self.section_count == 120:
+				self.lin_vel -= 0.08
+
 		self._publish_vel()
 
 	def _process_image(self, msg):
 		torch.cuda.synchronize()
-		self.img_cnt += 1
-		if self.img_cnt == 154:
-			self.section = 2
-		if self.img_cnt > 154 and self.img_cnt < 160:
-			self.lin_vel = 1.3
-		if self.img_cnt == 247:
-			self.section = 3
-			self.lin_vel = 1.0
-		if self.img_cnt == 335:
-			self.section = 4
-		if self.img_cnt == 450:
-			self.lin_vel = 0.0
-			self.ang_vel = 0.0
-			self._publish_vel()
-			return
-		if self.img_cnt > 450:
-			return
 
 		bridge = CvBridge()
 		cv_image = cv2.cvtColor(bridge.imgmsg_to_cv2(msg, desired_encoding="passthrough"), cv2.COLOR_BGR2RGB)
+
+		self.img_cnt += 1
+		self.section_count += 1 #164, 2,3
+		if self.section == 1 and self.section_count >= 135 and self._check_pink(cv_image, num = 1, den = 2):
+			self.sec2 = self.img_cnt
+			self.section_count = 1
+			self.section = 2
+			print("section 2")
+			print(self.img_cnt)
+		elif self.section == 2 and self.section_count >= 82 and self._check_pink(cv_image, num=1, den = 2):
+			self.sec3 = self.img_cnt
+			self.section_count = 1
+			self.section = 3
+			print("section 3")
+			print(self.img_cnt)
+		elif self.pink3 == False and self.section == 3 and self.section_count >= 50 and self._check_pink(cv_image, num=2, den=3):
+			self.sec4 = self.img_cnt
+			print("section 4")
+			print(self.img_cnt)
+			self.pink3 = True
+		elif self.section == 3 and self.section_count == 107:
+			self.section_count = 1
+			self.section = 4
+		elif self.section == 4 and self.section_count >= 115 and self.section_count <= 124:
+			self.lin_vel = 0.5
+			self.ang_vel = 0.0
+			self._publish_vel()
+			filename = "image_{0}".format(self.img_cnt)
+			cv2.imwrite('/home/fizzer/ros_ws/src/my_controller/src/vision/' + filename + '.jpg', cv_image)
+			return
+		elif self.section == 4 and self.section_count > 118:
+			self.lin_vel = 0.0
+			self.ang_vel = 0.0
+			self._publish_vel()
+			print("starting")
+			ip = read_sign.ImageProcessing(self.sec2, self.sec3, self.sec4, self.img_cnt-2)
+			ip.run()
+			print("Finished")
+			while True:
+				continue
+			return
+
 		filename = "image_{0}".format(self.img_cnt)
 		cv2.imwrite('/home/fizzer/ros_ws/src/my_controller/src/vision/' + filename + '.jpg', cv_image)
 		cv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2GRAY)
 		#cv2.imshow('Vision', cv_image)
 		#cv2.waitKey(1)
 
-		if self.img_cnt >= 50 and self.img_cnt < 63:
-			if self.img_cnt < 57:
-				self.lin_vel = 0.3
-				self.ang_vel = -4.0
-			elif self.img_cnt < 61:
-				self.lin_vel = 0
-				self.ang_vel = -0.7
-			elif self.img_cnt == 61:
-				self.lin_vel = 0.5
-				self.ang_vel = 0.0
-			else:
-				self.lin_vel = 1.0
-				self.ang_vel = 0.0
+		if self.section == 1:
+			#if self.section_count == 96 or self.section_count == 95 or self.section_count == 94:
+			#	self.ang_vel = -2.0
+			#	self.lin_vel = 0.7
+			#	self._publish_vel()
+			#	return
+			if self.section_count < 9:
+				self.ang_vel = 0
+				self.lin_vel += 0.2
+				self._publish_vel()
+				return
+			#elif self.section_count >= 50 and self.section_count < 63:
+			#	if self.section_count < 57:
+			#		self.lin_vel = 0.3
+			#		self.ang_vel = -2.7
+			#	elif self.section_count < 61:
+			#		self.lin_vel = 0
+			#		self.ang_vel = -0.7
+			#	elif self.section_count == 61:
+			#		self.lin_vel = 0.5
+			#		self.ang_vel = 0.0
+			#	else:
+			#		self.lin_vel = 1.0
+			#		self.ang_vel = 0.0
+			#	self._publish_vel()
+			#	return
+			#elif self.section_count >= 148 and self.section_count <= 164:
+			#	if self.section_count == 148:
+			#		self.lin_vel = 0.5
+			#		self.ang_vel = 0
+			#	elif self.section_count == 149:
+			#		self.lin_vel = 0.3
+			#		self.ang_vel = -3.0
+			#	elif self.section_count >= 149 and self.section_count <= 159:
+			#		self.lin_vel = 0
+			#		self.ang_vel = -3.0
+			#	elif self.section_count >= 159 and self.section_count <= 163:
+			#		self.lin_vel = 0
+			#		self.ang_vel = 3.0
+			#	self._publish_vel()
+			#	return
 
-			self._publish_vel()
-			return
-
-		if self.img_cnt >= 140 and self.img_cnt <= 153:
-			if self.img_cnt < 147:
-				self.lin_vel = 0.3
-				self.ang_vel = -4.0
-			elif self.img_cnt < 151:
-				self.lin_vel = 0
-				self.ang_vel = -0.7
-			elif self.img_cnt == 151:
-				self.lin_vel = 0.5
-				self.ang_vel = 0.0
-			else:
-				self.lin_vel = 1.0
-				self.ang_vel = 0.0
-
-			self._publish_vel()
-			return
-
-		if self.img_cnt >= 202 and self.img_cnt <= 207:
-			if self.img_cnt < 205:
-				self.lin_vel = 1.3
-				self.ang_vel = 4.0
-			elif self.img_cnt < 207:
-				self.lin_vel = 1.3
-				self.ang_vel = 0.0
-			else:
-				self.lin_vel = 1.7
-				self.ang_vel = -2.0
-
-			self._publish_vel()
-			return
+		#if self.section == 2:
+		#	if self.section_count >= 44 and self.section_count <= 46:
+		#		self.lin_vel = 1.5
+		#		#self.ang_vel = 4.0
+		#		self._publish_vel()
+		#		return
 
 		torch_image = torch.tensor(cv_image, dtype=torch.float32)
 		torch_image_batched = torch.unsqueeze(torch_image, dim=0)
@@ -378,7 +489,8 @@ class Controller():
 		#self._pause_simulation()
 		#time.sleep(4)
 		#self._unpause_simulation()
-		time.sleep(3.5)
+		#time.sleep(3.5)
+		input("press to start...")
 		print("subscribing")
 
 		self.sign_pub.publish(str('nootnoot,multi21,0,NA'))
