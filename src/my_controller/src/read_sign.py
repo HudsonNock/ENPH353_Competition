@@ -44,7 +44,7 @@ class ImageProcessing():
 			Dense(36, activation='softmax') \
 			])
 
-		self.model.load_weights('model_weights_iteration3_8.h5')
+		self.model.load_weights('model_weights_iteration5_0.h5')
 
 	def update_sec(self, sec2, sec3, sec4, last_index):
 		self.sec2 = sec2

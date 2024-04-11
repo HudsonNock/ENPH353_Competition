@@ -300,6 +300,12 @@ class Controller():
 
 			if self.section_count >= 172 and self.section_count <= 178:
 				self.ang_vel -= 1.0
+
+			if self.img_cnt - self.sec4 > 23:
+				if self.lin_vel < 0.8:
+					self.lin_vel += 0.04
+				self.ang_vel += 0.07
+
 			if self.lin_vel < 0:
 				self.lin_vel = 0
 			if self.lin_vel > 1.0:
@@ -328,20 +334,17 @@ class Controller():
 			elif action == 8:
 				self.lin_vel -= 0.2
 				self.ang_vel = -2
+
+			if self.section_count >= 69 and self.section_count <= 81:
+				if self.ang_vel > 0:
+					self.ang_vel /= 2
+				if self.lin_vel > 1:
+					self.lin_vel -= 0.07
+
 			if self.lin_vel < 0:
 				self.lin_vel = 0
 			if self.lin_vel > 1.8:
 				self.lin_vel = 1.8
-
-			if self.section_count == 118 or self.section_count == 119 or self.section_count == 120:
-				self.lin_vel -= 0.08
-
-			if self.img_cnt - self.sec4 < 25:
-				if self.img_cnt - self.sec4 > 12:
-					self.lin_vel += 0.04
-					self.ang_vel += 0.07
-					#if self.restart_sign == False:
-					#	self.ang_vel = 4.0
 
 		self._publish_vel()
 
@@ -473,7 +476,7 @@ class Controller():
 			print("section 4")
 			print(self.img_cnt)
 			self.pink3 = True
-		elif self.section == 3 and self.img_cnt - self.sec4 >= 25 and self.sec4 != 0:
+		elif self.section == 3 and self.img_cnt - self.sec4 >= 50 and self.sec4 != 0:
 			self.section_count = 1
 			self.section = 4
 		elif self.section == 3 and self.pink3 == False and self.section_count >= 150:
@@ -481,14 +484,14 @@ class Controller():
 			self.img_cnt = self.sec3
 			self.respawn(2)
 			return
-		elif self.section == 4 and self.section_count >= 115 and self.section_count <= 124:
+		elif self.section == 4 and self.section_count >= 110 and self.section_count <= 120:
 			self.lin_vel = 0.5
 			self.ang_vel = 0.0
 			self._publish_vel()
 			filename = "image_{0}".format(self.img_cnt)
 			cv2.imwrite('/home/fizzer/ros_ws/src/my_controller/src/vision/image_' + str(self.iteration) + '_' + str(self.img_cnt) + '.jpg', cv_image)
 			return
-		elif self.section == 4 and self.section_count > 118:
+		elif self.section == 4 and self.section_count > 120:
 			self.lin_vel = 0.0
 			self.ang_vel = 0.0
 			self._publish_vel()
