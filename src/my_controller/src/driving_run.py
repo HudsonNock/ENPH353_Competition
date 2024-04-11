@@ -171,6 +171,18 @@ class Controller():
 		self.sec4 = 0
 		self.pink3 = False
 
+		self.iteration = 0
+		self.dcount = 0
+		self.fcount = 0
+
+		self.start = 0
+		self.end = 0
+
+		self.restart_sign = False
+
+		self.ip = read_sign.ImageProcessing()
+		self.missed_signs = []
+
 	def _publish_vel(self):
 		tw = Twist()
 		tw.linear.x = self.lin_vel
@@ -324,9 +336,71 @@ class Controller():
 			if self.section_count == 118 or self.section_count == 119 or self.section_count == 120:
 				self.lin_vel -= 0.08
 
+			if self.img_cnt - self.sec4 < 25:
+				if self.img_cnt - self.sec4 > 12:
+					self.lin_vel += 0.04
+					self.ang_vel += 0.07
+					#if self.restart_sign == False:
+					#	self.ang_vel = 4.0
+
 		self._publish_vel()
 
+	def check_sign(self):
+		self.iteration += 1
+		self.restart_sign = True
+		self.missed_signs = self.ip.get_missed_signs()
+		if len(self.missed_signs) == 0:
+			words = self.ip.get_words()
+			for i in range(len(words)):
+				self.sign_pub.publish(str('nootnoot,noots,' + str(i+1) + ',' + words[i]))
+				time.sleep(0.05)
+			self.sign_pub.publish(str('nootnoot,noots,-1,NA'))
+			while True:
+				continue
+
+		self.start = self.missed_signs[0]
+		self.end = self.missed_signs[len(self.missed_signs)-1]
+		self.sec2 = 0
+		self.sec3 = 0
+		self.sec4 = 0
+		self.section_count = 0
+		self.img_cnt = 0
+		self.pink3 = False
+		if self.start == 1 or self.start == 2 or self.start == 3 or self.start == 4:
+			self.respawn(0)
+			self.section = 1
+		elif self.start == 5 or self.start == 6:
+			self.respawn(1)
+			self.section = 2
+		elif self.start == 7:
+			self.respawn(2)
+			self.section = 3
+		elif self.start == 8:
+			self.respawn(3)
+			self.section = 4
+			self.pink3 = True
+			self.fcount = 30
+
 	def _process_image(self, msg):
+		#self.img_cnt += 1
+		#self.respawn(self.img_cnt % 4)
+
+		if self.dcount > 0:
+			self.dcount -= 1
+			self.lin_vel = 0
+			self.ang_vel = 0
+			self._publish_vel()
+			return
+
+		if self.fcount > 0:
+			self.fcount -= 1
+			self.lin_vel += 0.1
+			if self.lin_vel > 1.2:
+				self.lin_vel = 1.2
+			self.ang_vel = 0
+			self._publish_vel()
+			return
+
 		torch.cuda.synchronize()
 
 		bridge = CvBridge()
@@ -334,99 +408,106 @@ class Controller():
 
 		self.img_cnt += 1
 		self.section_count += 1 #164, 2,3
+
+		if self.restart_sign:
+			interval_bounds = [[1,15],
+						[44,58],
+						[70,84],
+						[self.sec2-23, self.sec2],
+						[self.sec2+35, self.sec2+54],
+						[self.sec3-15, self.sec3],
+						[self.sec4-15, self.sec4+5]]
+			idx = 0
+			if self.end == 1 and self.section_count > 15:
+				idx = 1
+			elif self.end == 2 and self.section_count > 58:
+				idx = 2
+			elif self.end == 3 and self.section_count > 84:
+				idx = 3
+			elif self.end == 4 and self.section == 2:
+				idx = 4
+			elif self.end == 5 and self.section_count > 54 and self.section == 2:
+				idx = 5
+			elif self.end == 6 and self.section == 3:
+				idx = 6
+			elif self.end == 7 and self.pink3:
+				idx = 7
+			elif self.end == 8 and self.section == 4 and self.section_count > 118:
+				idx = 8
+
+			if idx != 0:
+				intervals = []
+				for i in range(min(idx,7)):
+					if i+1 in self.missed_signs:
+						intervals.append(interval_bounds[i])
+				if idx == 8:
+					intervals.append([self.img_cnt - 34, self.img_cnt - 2])
+				self.ip.update_group(intervals)
+				self.check_sign()
+				return
+
 		if self.section == 1 and self.section_count >= 135 and self._check_pink(cv_image, num = 1, den = 2):
 			self.sec2 = self.img_cnt
 			self.section_count = 1
 			self.section = 2
 			print("section 2")
 			print(self.img_cnt)
+		elif self.section == 1 and self.section_count >= 165:
+			self.img_cnt = 0
+			self.section_count = 0
+			self.respawn(0)
+			return
 		elif self.section == 2 and self.section_count >= 82 and self._check_pink(cv_image, num=1, den = 2):
 			self.sec3 = self.img_cnt
 			self.section_count = 1
 			self.section = 3
 			print("section 3")
 			print(self.img_cnt)
+		elif self.section == 2 and self.section_count >= 108:
+			self.img_cnt = self.sec2
+			self.section_count = 0
+			self.respawn(1)
+			return
 		elif self.pink3 == False and self.section == 3 and self.section_count >= 50 and self._check_pink(cv_image, num=2, den=3):
 			self.sec4 = self.img_cnt
 			print("section 4")
 			print(self.img_cnt)
 			self.pink3 = True
-		elif self.section == 3 and self.section_count == 107:
+		elif self.section == 3 and self.img_cnt - self.sec4 >= 25 and self.sec4 != 0:
 			self.section_count = 1
 			self.section = 4
+		elif self.section == 3 and self.pink3 == False and self.section_count >= 150:
+			self.section_count = 0
+			self.img_cnt = self.sec3
+			self.respawn(2)
+			return
 		elif self.section == 4 and self.section_count >= 115 and self.section_count <= 124:
 			self.lin_vel = 0.5
 			self.ang_vel = 0.0
 			self._publish_vel()
 			filename = "image_{0}".format(self.img_cnt)
-			cv2.imwrite('/home/fizzer/ros_ws/src/my_controller/src/vision/' + filename + '.jpg', cv_image)
+			cv2.imwrite('/home/fizzer/ros_ws/src/my_controller/src/vision/image_' + str(self.iteration) + '_' + str(self.img_cnt) + '.jpg', cv_image)
 			return
 		elif self.section == 4 and self.section_count > 118:
 			self.lin_vel = 0.0
 			self.ang_vel = 0.0
 			self._publish_vel()
-			print("starting")
-			ip = read_sign.ImageProcessing(self.sec2, self.sec3, self.sec4, self.img_cnt-2)
-			ip.run()
-			print("Finished")
-			while True:
-				continue
+			self.ip.update_sec(self.sec2, self.sec3, self.sec4, self.img_cnt - 2)
+			self.ip.run()
+			self.check_sign()
 			return
 
-		filename = "image_{0}".format(self.img_cnt)
-		cv2.imwrite('/home/fizzer/ros_ws/src/my_controller/src/vision/' + filename + '.jpg', cv_image)
+		cv2.imwrite('/home/fizzer/ros_ws/src/my_controller/src/vision/image_' + str(self.iteration) + '_' + str(self.img_cnt) + '.jpg', cv_image)
 		cv_image = cv2.cvtColor(cv_image, cv2.COLOR_RGB2GRAY)
 		#cv2.imshow('Vision', cv_image)
 		#cv2.waitKey(1)
 
 		if self.section == 1:
-			#if self.section_count == 96 or self.section_count == 95 or self.section_count == 94:
-			#	self.ang_vel = -2.0
-			#	self.lin_vel = 0.7
-			#	self._publish_vel()
-			#	return
 			if self.section_count < 9:
 				self.ang_vel = 0
 				self.lin_vel += 0.2
 				self._publish_vel()
 				return
-			#elif self.section_count >= 50 and self.section_count < 63:
-			#	if self.section_count < 57:
-			#		self.lin_vel = 0.3
-			#		self.ang_vel = -2.7
-			#	elif self.section_count < 61:
-			#		self.lin_vel = 0
-			#		self.ang_vel = -0.7
-			#	elif self.section_count == 61:
-			#		self.lin_vel = 0.5
-			#		self.ang_vel = 0.0
-			#	else:
-			#		self.lin_vel = 1.0
-			#		self.ang_vel = 0.0
-			#	self._publish_vel()
-			#	return
-			#elif self.section_count >= 148 and self.section_count <= 164:
-			#	if self.section_count == 148:
-			#		self.lin_vel = 0.5
-			#		self.ang_vel = 0
-			#	elif self.section_count == 149:
-			#		self.lin_vel = 0.3
-			#		self.ang_vel = -3.0
-			#	elif self.section_count >= 149 and self.section_count <= 159:
-			#		self.lin_vel = 0
-			#		self.ang_vel = -3.0
-			#	elif self.section_count >= 159 and self.section_count <= 163:
-			#		self.lin_vel = 0
-			#		self.ang_vel = 3.0
-			#	self._publish_vel()
-			#	return
-
-		#if self.section == 2:
-		#	if self.section_count >= 44 and self.section_count <= 46:
-		#		self.lin_vel = 1.5
-		#		#self.ang_vel = 4.0
-		#		self._publish_vel()
-		#		return
 
 		torch_image = torch.tensor(cv_image, dtype=torch.float32)
 		torch_image_batched = torch.unsqueeze(torch_image, dim=0)
@@ -471,16 +552,39 @@ class Controller():
 		self._take_action_distribute()
 		torch.cuda.empty_cache()
 
-	def _pause_simulation(self):
-		rospy.wait_for_service('/gazebo/pause_physics')
-		pause_physics = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
-		pause_physics()
+	#def _pause_simulation(self):
+	#	rospy.wait_for_service('/gazebo/pause_physics')
+	#	pause_physics = rospy.ServiceProxy('/gazebo/pause_physics', Empty)
+	#	pause_physics()
 
-	def _unpause_simulation(self):
-		rospy.wait_for_service('/gazebo/unpause_physics')
-		unpause_physics = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
-		unpause_physics()
+	#def _unpause_simulation(self):
+	#	rospy.wait_for_service('/gazebo/unpause_physics')
+	#	unpause_physics = rospy.ServiceProxy('/gazebo/unpause_physics', Empty)
+	#	unpause_physics()
 
+	def respawn(self, index):
+		msg = ModelState()
+		msg.model_name = 'R1'
+
+		pos = [[5.493696, 2.472393, 0.0525], [0.5136, 0, 0.0525], [-3.7532, 0.4235, 0.525], [-3.8523, -2.275, 0.0525]]
+		orientation = [[0, 0, 0.707, -0.707], [0, 0, 0.707, 0.707], [0,0,0.93,-np.sqrt(1-0.92**2)], [0, 0, 0, -1.0]]
+
+		msg.pose.position.x = pos[index][0]
+		msg.pose.position.y = pos[index][1]
+		msg.pose.position.z = pos[index][2]
+		msg.pose.orientation.y = orientation[index][0]
+		msg.pose.orientation.x = orientation[index][1]
+		msg.pose.orientation.z = orientation[index][2]
+		msg.pose.orientation.w = orientation[index][3]
+
+		self.lin_vel = 0
+		self.ang_vel = 0
+		self.dcount = 5
+		self._publish_vel()
+
+		rospy.wait_for_service('/gazebo/set_model_state')
+		set_state = rospy.ServiceProxy('/gazebo/set_model_state', SetModelState)
+		resp = set_state(msg)
 
 	def run(self):
 		rospy.init_node('adeept_awr_driver')
