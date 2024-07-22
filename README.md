@@ -5,14 +5,14 @@ designed to drive a simulated car through a race track while read signs along th
 to drive and a various filters along with a CNN to read the signs.
 
 Above view of the robot, note that only two wheels had to be inside the road at any given time. <br />
-https://github.com/user-attachments/assets/7e9fa4be-4a7a-4b7a-b543-e153ebce588a
+
+[https://github.com/user-attachments/assets/7e9fa4be-4a7a-4b7a-b543-e153ebce588a](https://github.com/user-attachments/assets/38bc92b5-8e7c-44f7-893e-8a27f093a26c)
 
 Camera view of the robot (what we have access to) <br />
-https://github.com/user-attachments/assets/874a72b2-1b82-4684-a60d-bab6adc491f1
+
+https://github.com/user-attachments/assets/0dcdb58a-69a8-45ca-b8b4-ef9bd14a24a3
 
 This repo contains a brief summary of our implementation, for more information refer to our report: <br /> [ENPH353 Final Report.pdf](https://github.com/user-attachments/files/16322865/ENPH353.Final.Report.pdf)
-
-## Introduction
 
 ### Problem outline
 
