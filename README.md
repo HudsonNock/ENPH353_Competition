@@ -25,7 +25,7 @@ We decided to drive using a soft actor critic (SAC, https://arxiv.org/abs/1801.0
 
 To set up the environment for training, we could determine the position of the wheels as we were using ROS and Gazebo, then compare them against a bitmap of the allowed path, if two or more wheels were off the road it would count as a respawn. The state space was composed of a gray scaled camera view filtered with a 2x2 average mask applied, as well as the speed set by the robot. Although the speed set does not necessarily match the actual speed (which could lead to an environment that isn't a MDP), we thought it would be a close match as long as the robot was always on the ground and so this problem wouldn't practically matter.
 
-The main difference between TMRL's implementation and ours is:
+The main difference between a standard SAC implementation and ours is:
 
 * Our implementation used SAC in a discrete action setting (https://arxiv.org/abs/1910.07207). This was mainly due to time constraints as we were more familiar with the discrete setting and thought it would be easier to implement
 * Since we were running linux off of a usb stick, we didn't want to read and write large amounts of data on memory and so ended up not using a replay buffer. Additionally, we only had access to a Nvidia 1050 GPU which could only progress a batch size of 1. Although this decreased the sample efficiency, because of these constraints it did make it possible to use TD($\lambda$) algorithm.
