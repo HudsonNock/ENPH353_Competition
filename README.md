@@ -1,5 +1,7 @@
 # ENPH 353 Competition
 
+Project Team: Hudson Nock (Reinforcement learning), Brianna Gopaul (Computer vision)
+
 ENPH 353 is a project course at UBC where students create programs
 designed to drive a simulated car through a race track while read signs along the way. Our team used reinforcement learning (RL)
 to drive and a various filters along with a CNN to read the signs.
@@ -23,7 +25,7 @@ The competition is aimed towards maximizing the number of points achieved. Point
 While driving, the robot is only given a camera view and has to determine its actions from that. It can then output a desired speed and steering angle.
 We decided to drive using a soft actor critic (SAC, https://arxiv.org/abs/1801.01290) algorithm. The use of SAC and the reward function used was inspired by TMRL (https://github.com/trackmania-rl/tmrl).
 
-To set up the environment for training, we could determine the position of the wheels as we were using ROS and Gazebo, then compare them against a bitmap of the allowed path, if two or more wheels were off the road it would count as a respawn. The state space was composed of a gray scaled camera view filtered with a 2x2 average mask applied, as well as the speed set by the robot. Although the speed set does not necessarily match the actual speed (which could lead to an environment that isn't a MDP), we thought it would be a close match as long as the robot was always on the ground and so this problem wouldn't practically matter.
+To set up the environment for training, we determined the position of the wheels then compared them against a bitmap of the allowed path, if two or more wheels were off the road it would count as a respawn. The state space was composed of a gray scaled camera view filtered with a 2x2 average mask applied, as well as the speed set by the robot. Although the speed set does not necessarily match the actual speed (which could lead to an environment that isn't a MDP), we thought it would be a close match as long as the robot was always on the ground and so this problem wouldn't practically matter.
 
 The main difference between a standard SAC implementation and ours is:
 
@@ -32,6 +34,10 @@ The main difference between a standard SAC implementation and ours is:
 * In our testing, some actions were quickly made extremely unlikely, this may be due to the memory problem above. To counter this we ran it off policy with an epsilon soft algorithm.
 * In long straight sections, we found that the robot would take an indirect curved path since the difference in future expected reward was very similar. Although this didn't lead to many problems in training, running it for the competition would introduce new dynamics since we could not pause the simulation between states, which could lead to differences in performance between testing and deployment. If the robot instead took a straight path we would be more confident that the robot would perform as expected. Although we think this behavior would disappear with enough training, due to time and compute restraints, we opted to change the reward function such that each reward achieved while turning is divided by 2.5.
 
-  ### Results
+### Computer Vision
 
-  We ended up winning the competition with a perfect score on the course and the fastest time of 33 seconds.
+[To be written]
+
+### Results
+
+We ended up winning the competition with a perfect score on the course and the fastest time of 33 seconds.
