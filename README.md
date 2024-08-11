@@ -36,7 +36,56 @@ The main difference between a standard SAC implementation and ours is:
 
 ### Computer Vision
 
-[To be written]
+#### Locating Signs 
+While the car drives, camera feed images were processed to locate signs and subsequently letters. To locate signs, we applied bitmaps that filtered for distinct colours of blue that the sign consisted of. Extra filtering was then applied by dilating and eroding the gray-scaled image. Contours were then found by running OpenCV’s canny Edge Detection. Once the contour is found, a perspective transform is done to fit the screen, however the image normally contains the outer blue section of the sign. To isolate the white interior of the sign, we again ran a blue mask function and repeated the steps above. The resulting image contains only the interior of the sign with the clue value and clue type.
+ 
+#### Identifying Letters
+Because the camera resolution is low, letters often have varying pixel colours with little distinction between a connection within a letter and a gap between two letters. This makes it difficult to determine the correct masking from just one threshold. After much experimentation, we settled on: (i) masking the pixels who’s blue value is 1.6 times greater than their red and green value,  (ii) taking the average of those pixels, and (iii) finding all pixels within a threshold of the average blue. To segment the letters, canny Edge Detection was applied, with a bounding rectangle created for each contour. As a safety measure, bounding boxes were merged or split in special conditions.
+
+
+<img width="53" alt="letter-segment" src="https://github.com/user-attachments/assets/9f261814-8687-4e34-b71a-0b6081975dc9">
+
+Example of a letter that has separate contours and needs to be merged. 
+
+#### Data Generation
+##### Generating Signs
+Random strings of letters and numbers were generated, then, using the provided code from ‘licenseplategenerator.py’, was rendered on a sign and sent through the same preprocessing steps outlined above.
+
+##### Data Augmentation
+When comparing the fake data to real driving data, we noticed that the synthetic data and the real data had a different variance in the letter width. To address this, we decided to first blur the letter, then use a percent blue mask with a varying threshold value. 
+
+Additionally, to better replicate the real data, random sections of letters were removed half the time in varying intensities. Various filters were also applied to blur the image further. 
+
+### Convolutional Neural Network
+The data was formatted using one hot encoding and the model was trained to predict one letter or number at a time.
+
+This architecture was loosely inspired by AlexNet. I significantly reduced the size of the model and number of layers. 
+
+| Layer (type)               | Output Shape         | Param #  |
+|----------------------------|----------------------|----------|
+| conv2d_2 (Conv2D)           | (None, 32, 27, 64)   | 640      |
+| max_pooling2d_2 (MaxPooling2D) | (None, 16, 13, 64)   | 0        |
+| conv2d_3 (Conv2D)           | (None, 16, 13, 64)   | 36928    |
+| max_pooling2d_3 (MaxPooling2D) | (None, 8, 6, 64)    | 0        |
+| flatten_1 (Flatten)         | (None, 3072)         | 0        |
+| dense_3 (Dense)             | (None, 512)          | 1573376  |
+| dropout_3 (Dropout)         | (None, 512)          | 0        |
+| dense_4 (Dense)             | (None, 256)          | 131328   |
+| dropout_4 (Dropout)         | (None, 256)          | 0        |
+| dense_5 (Dense)             | (None, 128)          | 32896    |
+| dropout_5 (Dropout)         | (None, 128)          | 0        |
+| dense_6 (Dense)             | (None, 36)           | 4644     |
+| **Total params**            | **1779812 (6.79 MB)**|          |
+| **Trainable params**        | **1779812 (6.79 MB)**|          |
+| **Non-trainable params**    | **0 (0.00 Byte)**    |          |
+
+
+#### Training 
+To avoid overfitting, new data was generated every epoch. The model was trained on 1,000 fake images per epoch for 8 epochs. 
+
+#### Testing: Confusion Matrix 
+<img width="496" alt="image" src="https://github.com/user-attachments/assets/f4d391d0-00d5-4e1f-9208-df14e1f7a0e3">
+
 
 ### Results
 
