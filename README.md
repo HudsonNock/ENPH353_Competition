@@ -89,4 +89,4 @@ To avoid overfitting, new data was generated every epoch. The model was trained 
 
 ### Results
 
-We ended up winning the competition with a perfect score on the course and the fastest time of 33 seconds.
+We ended up winning the competition with a perfect score on the course and the fastest time to date of 33 seconds.
